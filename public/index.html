@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atomic Habits Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <style>
+        /* Following shadcn/ui color scheme */
+        :root {
+            --background: 0 0% 100%;
+            --foreground: 222.2 84% 4.9%;
+            --card: 0 0% 100%;
+            --card-foreground: 222.2 84% 4.9%;
+            --popover: 0 0% 100%;
+            --popover-foreground: 222.2 84% 4.9%;
+            --primary: 222.2 47.4% 11.2%;
+            --primary-foreground: 210 40% 98%;
+            --secondary: 210 40% 96.1%;
+            --secondary-foreground: 222.2 47.4% 11.2%;
+            --muted: 210 40% 96.1%;
+            --muted-foreground: 215.4 16.3% 46.9%;
+            --accent: 210 40% 96.1%;
+            --accent-foreground: 222.2 47.4% 11.2%;
+            --destructive: 0 84.2% 60.2%;
+            --destructive-foreground: 210 40% 98%;
+            --border: 214.3 31.8% 91.4%;
+            --input: 214.3 31.8% 91.4%;
+            --ring: 222.2 84% 4.9%;
+            --radius: 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-background text-foreground min-h-screen p-4">
+    <div class="max-w-6xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">Atomic Habits Tracker</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Analytics Section -->
+            <div class="col-span-1">
+                <div class="bg-card p-6 rounded-lg border">
+                    <h2 class="text-xl font-semibold mb-4">Analytics</h2>
+                    <canvas id="streakChart" class="mb-4"></canvas>
+                    <div id="stats" class="grid grid-cols-2 gap-4">
+                        <!-- Stats will be rendered here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Habits Section -->
+            <div class="col-span-2">
+                <div class="mb-8">
+                    <form id="habit-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input 
+                            type="text" 
+                            id="habit-input" 
+                            placeholder="Add a new habit..."
+                            class="px-4 py-2 border rounded-md"
+                            required
+                        >
+                        <input 
+                            type="text" 
+                            id="sector-input" 
+                            placeholder="Sector (e.g., Health, Learning)"
+                            class="px-4 py-2 border rounded-md"
+                        >
+                        <input 
+                            type="text" 
+                            id="unit-input" 
+                            placeholder="Unit (e.g., pages, km, liters)"
+                            class="px-4 py-2 border rounded-md"
+                        >
+                        <input 
+                            type="number" 
+                            id="target-input" 
+                            placeholder="Target quantity"
+                            class="px-4 py-2 border rounded-md"
+                        >
+                        <button 
+                            type="submit"
+                            class="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:opacity-90 col-span-2"
+                        >
+                            Add Habit
+                        </button>
+                    </form>
+                </div>
+
+                <div id="sectors-container">
+                    <!-- Sectors will be rendered here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class HabitTracker {
+            constructor() {
+                this.habits = [];
+                this.init();
+            }
+
+            async init() {
+                await this.loadHabits();
+                this.setupEventListeners();
+                this.initializeSortable();
+            }
+
+            initializeSortable() {
+                const containers = document.querySelectorAll('.habits-list');
+                containers.forEach(container => {
+                    new Sortable(container, {
+                        group: 'habits',
+                        animation: 150,
+                        onEnd: async (evt) => {
+                            const updates = Array.from(evt.to.children).map((el, index) => ({
+                                id: el.dataset.id,
+                                order: index
+                            }));
+                            
+                            await fetch('/api/habits', {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(updates)
+                            });
+                        }
+                    });
+                });
+            }
+
+            async loadHabits() {
+                const response = await fetch('/api/habits');
+                this.habits = await response.json();
+                this.renderHabits();
+                this.renderAnalytics();
+            }
+
+            setupEventListeners() {
+                document.getElementById('habit-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const nameInput = document.getElementById('habit-input');
+                    const sectorInput = document.getElementById('sector-input');
+                    const unitInput = document.getElementById('unit-input');
+                    const targetInput = document.getElementById('target-input');
+
+                    const habit = {
+                        name: nameInput.value.trim(),
+                        sector: sectorInput.value.trim() || 'Uncategorized',
+                        unit: unitInput.value.trim() || null,
+                        targetQuantity: targetInput.value ? Number(targetInput.value) : null,
+                        completed: false,
+                        quantity: 0,
+                        date: new Date().toISOString().split('T')[0]
+                    };
+
+                    if (habit.name) {
+                        await this.addHabit(habit);
+                        nameInput.value = '';
+                        sectorInput.value = '';
+                        unitInput.value = '';
+                        targetInput.value = '';
+                    }
+                });
+            }
+
+            renderAnalytics() {
+                const ctx = document.getElementById('streakChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (this.streakChart) {
+                    this.streakChart.destroy();
+                }
+
+                const data = {
+                    labels: this.habits.map(h => h.name),
+                    datasets: [{
+                        data: this.habits.map(h => h.streak),
+                        backgroundColor: this.habits.map(() => 
+                            `hsl(${Math.random() * 360}, 70%, 50%)`
+                        )
+                    }]
+                };
+
+                this.streakChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: data,
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                            }
+                        }
+                    }
+                });
+
+                // Render stats
+                const stats = document.getElementById('stats');
+                const totalHabits = this.habits.length;
+                const completedToday = this.habits.filter(h => h.completed).length;
+                
+                stats.innerHTML = `
+                    <div class="bg-secondary p-4 rounded-lg">
+                        <div class="text-2xl font-bold">${totalHabits}</div>
+                        <div class="text-sm text-muted-foreground">Total Habits</div>
+                    </div>
+                    <div class="bg-secondary p-4 rounded-lg">
+                        <div class="text-2xl font-bold">${completedToday}</div>
+                        <div class="text-sm text-muted-foreground">Completed Today</div>
+                    </div>
+                `;
+            }
+
+            renderHabits() {
+                const sectors = {};
+                this.habits.forEach(habit => {
+                    if (!sectors[habit.sector]) {
+                        sectors[habit.sector] = [];
+                    }
+                    sectors[habit.sector].push(habit);
+                });
+
+                const container = document.getElementById('sectors-container');
+                container.innerHTML = Object.entries(sectors)
+                    .map(([sector, habits]) => `
+                        <div class="mb-8">
+                            <h2 class="text-xl font-semibold mb-4">${sector}</h2>
+                            <div class="habits-list space-y-4">
+                                ${habits
+                                    .sort((a, b) => a.order - b.order)
+                                    .map(habit => this.renderHabitCard(habit))
+                                    .join('')}
+                            </div>
+                        </div>
+                    `)
+                    .join('');
+
+                this.initializeSortable();
+            }
+
+            renderHabitCard(habit) {
+                return `
+                    <div class="flex items-center gap-4 p-4 bg-card rounded-lg border cursor-move" data-id="${habit.id}">
+                        <input 
+                            type="checkbox" 
+                            ${habit.completed ? 'checked' : ''} 
+                            onchange="habitTracker.toggleHabit('${habit.id}')"
+                            class="w-5 h-5 rounded border-gray-300"
+                        >
+                        <div class="flex-1">
+                            <span class="${habit.completed ? 'line-through text-muted-foreground' : ''}">${habit.name}</span>
+                            ${habit.unit ? `
+                                <div class="mt-2">
+                                    <input 
+                                        type="number" 
+                                        value="${habit.quantity || 0}"
+                                        onchange="habitTracker.updateQuantity('${habit.id}', this.value)"
+                                        class="w-20 px-2 py-1 border rounded-md mr-2"
+                                    >
+                                    <span class="text-sm text-muted-foreground">${habit.unit}</span>
+                                    ${habit.targetQuantity ? `
+                                        <span class="text-sm text-muted-foreground">/ ${habit.targetQuantity} ${habit.unit}</span>
+                                    ` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                        <div class="text-sm font-medium">
+                            🔥 ${habit.streak || 0}
+                        </div>
+                    </div>
+                `;
+            }
+
+            async updateQuantity(id, value) {
+                const habit = this.habits.find(h => h.id === id);
+                habit.quantity = Number(value);
+                
+                if (habit.targetQuantity) {
+                    habit.completed = habit.quantity >= habit.targetQuantity;
+                }
+
+                await this.updateHabit(habit);
+            }
+
+            async toggleHabit(id) {
+                const habit = this.habits.find(h => h.id === id);
+                habit.completed = !habit.completed;
+                await this.updateHabit(habit);
+            }
+
+            async updateHabit(habit) {
+                const response = await fetch('/api/habits', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(habit)
+                });
+
+                this.habits = await response.json();
+                this.renderHabits();
+                this.renderAnalytics();
+            }
+
+            async addHabit(habitData) {
+                const response = await fetch('/api/habits', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(habitData)
+                });
+
+                this.habits = await response.json();
+                this.renderHabits();
+                this.renderAnalytics();
+            }
+        }
+
+        const habitTracker = new HabitTracker();
+    </script>
+</body>
+</html> 

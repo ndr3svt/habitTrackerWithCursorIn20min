@@ -1,0 +1,53 @@
+[
+  {
+    "name": "Meditation in the morning after waking up",
+    "completed": true,
+    "date": "2025-01-28",
+    "id": "18b6e3fb-c132-495c-8426-ead772ae070d",
+    "streak": 1,
+    "history": [
+      {
+        "date": "2025-01-28",
+        "completed": true
+      }
+    ],
+    "order": 0,
+    "sector": "Health",
+    "unit": "minutes",
+    "targetQuantity": 10,
+    "quantity": 10
+  },
+  {
+    "name": "Drink 1 litter of water after meditation",
+    "completed": true,
+    "date": "2025-01-28",
+    "id": "f83d22e2-af0b-499b-b3f0-6f02cf634f91",
+    "order": 2,
+    "streak": 1,
+    "history": [
+      {
+        "date": "2025-01-28",
+        "completed": true
+      }
+    ]
+  },
+  {
+    "name": "Running",
+    "sector": "Health",
+    "unit": "km",
+    "targetQuantity": 6,
+    "completed": true,
+    "quantity": 4,
+    "date": "2025-01-28",
+    "id": "24ef8e71-ebc4-4cf6-9758-b4eb7397a4a9",
+    "order": 0,
+    "streak": 1,
+    "history": [
+      {
+        "date": "2025-01-28",
+        "completed": true,
+        "quantity": 4
+      }
+    ]
+  }
+]
